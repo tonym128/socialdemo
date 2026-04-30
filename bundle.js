@@ -111659,6 +111659,7 @@ ${toHex(hashedRequest)}`;
       init_Messaging();
       init_Profile();
       init_WebRTCRemoteAdapter();
+      init_MediaUtils();
       init_PairingModal();
       var DEBUG = true;
       var PrefixProxyAdapter = class {
@@ -111684,6 +111685,36 @@ ${toHex(hashedRequest)}`;
         canWrite(path2) {
           return this.baseAdapter.canWrite(this.getKey(path2));
         }
+      };
+      var UserAvatar = ({ userId, profileCache, resolveImage, size = 40 }) => {
+        const [avatarUrl, setAvatarUrl] = (0, import_react2.useState)(null);
+        const p2 = profileCache[userId] || { name: userId };
+        (0, import_react2.useEffect)(() => {
+          if (p2.avatar && p2.avatar.startsWith("public/blobs/")) {
+            resolveImage(p2.avatar, userId).then(setAvatarUrl);
+          } else if (p2.avatar && p2.avatar.startsWith("data:")) {
+            setAvatarUrl(p2.avatar);
+          }
+        }, [p2.avatar, userId, resolveImage]);
+        return /* @__PURE__ */ import_react2.default.createElement("div", { className: "d-flex align-items-center" }, avatarUrl ? /* @__PURE__ */ import_react2.default.createElement("img", { src: avatarUrl, style: { width: size + "px", height: size + "px", borderRadius: "50%", objectFit: "cover" }, className: "me-2" }) : /* @__PURE__ */ import_react2.default.createElement("div", { className: "bg-secondary text-white rounded-circle d-flex align-items-center justify-content-center me-2", style: { width: size + "px", height: size + "px" } }, userId[0].toUpperCase()), size > 30 && /* @__PURE__ */ import_react2.default.createElement("span", { className: "fw-bold" }, p2.name || userId));
+      };
+      var PostItem = ({ post, userId, profileCache, resolveImage }) => {
+        const [imageUrl, setImageUrl] = (0, import_react2.useState)(null);
+        (0, import_react2.useEffect)(() => {
+          if (post.image) {
+            resolveImage(post.image, post.userId).then(setImageUrl);
+          }
+        }, [post.image, resolveImage]);
+        return /* @__PURE__ */ import_react2.default.createElement("div", { className: "card p-3 mb-3 border-0 shadow-sm" }, /* @__PURE__ */ import_react2.default.createElement("div", { className: "d-flex align-items-center mb-2" }, /* @__PURE__ */ import_react2.default.createElement(UserAvatar, { userId: post.userId, profileCache, resolveImage, size: 24 }), /* @__PURE__ */ import_react2.default.createElement("span", { className: "ms-2 small text-muted" }, new Date(post.timestamp).toLocaleString())), /* @__PURE__ */ import_react2.default.createElement("div", { className: "mb-2" }, post.content), imageUrl && /* @__PURE__ */ import_react2.default.createElement("img", { src: imageUrl, className: "img-fluid rounded", style: { maxHeight: "400px" } }));
+      };
+      var MessageItem = ({ m: m2, myId, resolveImage }) => {
+        const [imageUrl, setImageUrl] = (0, import_react2.useState)(null);
+        (0, import_react2.useEffect)(() => {
+          if (m2.image) {
+            resolveImage(m2.image, m2.senderId).then(setImageUrl);
+          }
+        }, [m2.image]);
+        return /* @__PURE__ */ import_react2.default.createElement("div", { className: `d-flex mb-3 ${m2.senderId === myId ? "justify-content-end" : "justify-content-start"}` }, /* @__PURE__ */ import_react2.default.createElement("div", { className: `p-2 rounded px-3 shadow-sm ${m2.senderId === myId ? "bg-primary text-white" : "bg-white"}`, style: { maxWidth: "80%" } }, m2.content && /* @__PURE__ */ import_react2.default.createElement("div", null, m2.content), imageUrl && /* @__PURE__ */ import_react2.default.createElement("img", { src: imageUrl, className: "img-fluid rounded mt-1", style: { maxHeight: "300px" } }), /* @__PURE__ */ import_react2.default.createElement("div", { className: `extra-small mt-1 text-end ${m2.senderId === myId ? "text-white-50" : "text-muted"}` }, new Date(m2.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }))));
       };
       var App = () => {
         const [config, setConfig] = (0, import_react2.useState)({
@@ -111713,10 +111744,54 @@ ${toHex(hashedRequest)}`;
         const [allUsers, setAllUsers] = (0, import_react2.useState)([]);
         const [lastSyncTime, setLastSyncTime] = (0, import_react2.useState)(null);
         const [newPost, setNewPost] = (0, import_react2.useState)("");
-        const [newImage, setNewPostImage] = (0, import_react2.useState)(null);
-        const [newImagePreview, setNewImagePreview] = (0, import_react2.useState)(null);
+        const [newPostImage, setNewPostImage] = (0, import_react2.useState)(null);
+        const [newPostImagePreview, setNewPostImagePreview] = (0, import_react2.useState)(null);
         const postFileRef = (0, import_react2.useRef)(null);
+        const [newMsgImage, setNewMsgImage] = (0, import_react2.useState)(null);
+        const [newMsgImagePreview, setNewMsgImagePreview] = (0, import_react2.useState)(null);
+        const msgFileRef = (0, import_react2.useRef)(null);
+        const profileFileRef = (0, import_react2.useRef)(null);
         const [profile, setProfile] = (0, import_react2.useState)(null);
+        const resolveImage = async (path2, userId) => {
+          if (!path2 || !sov) return null;
+          if (blobCache[path2]) return blobCache[path2];
+          try {
+            const data = await sov.getBlob(path2, userId);
+            if (data) {
+              const blob = new Blob([data]);
+              const url = URL.createObjectURL(blob);
+              setBlobCache((prev) => ({ ...prev, [path2]: url }));
+              return url;
+            }
+          } catch (e2) {
+            console.error("[App] Failed to resolve image:", path2, e2);
+          }
+          return null;
+        };
+        const handleFileChange = async (e2, type) => {
+          const file = e2.target.files?.[0];
+          if (!file) return;
+          const reader = new FileReader();
+          reader.onload = async (event) => {
+            let dataUrl = event.target?.result;
+            try {
+              dataUrl = await MediaUtils.compressImage(dataUrl, 100 * 1024);
+            } catch (err) {
+            }
+            const response = await fetch(dataUrl);
+            const binary = new Uint8Array(await response.arrayBuffer());
+            if (type === "post") {
+              setNewPostImage(binary);
+              setNewPostImagePreview(dataUrl);
+            } else if (type === "msg") {
+              setNewMsgImage(binary);
+              setNewMsgImagePreview(dataUrl);
+            } else if (type === "profile") {
+              setProfile((prev) => ({ ...prev, avatar: binary, avatarPreview: dataUrl }));
+            }
+          };
+          reader.readAsDataURL(file);
+        };
         const [syncing, setSyncing] = (0, import_react2.useState)(false);
         const [currentTab, setCurrentTab] = (0, import_react2.useState)("feed");
         const [messages, setMessages] = (0, import_react2.useState)([]);
@@ -111854,24 +111929,35 @@ ${toHex(hashedRequest)}`;
           setPosts(allPosts);
           const newMessages = await activeMessaging.getInboxMessages(lookbackDays);
           setMessages(newMessages);
+          const newProfiles = {};
+          for (const user of [...registry, ...followingList]) {
+            if (!profileCache[user.userId]) {
+              try {
+                const p2 = await pm.getOtherProfile(user.userId);
+                if (p2) newProfiles[user.userId] = p2;
+              } catch (e2) {
+              }
+            }
+          }
+          if (Object.keys(newProfiles).length > 0) {
+            setProfileCache((prev) => ({ ...prev, ...newProfiles }));
+          }
         };
         const handlePost = async () => {
-          if (!feed || !newPost) return;
-          await feed.post(newPost, true, newImage || void 0);
+          if (!feed || !newPost && !newPostImage) return;
+          await feed.post(newPost, true, newPostImage || void 0);
           setNewPost("");
           setNewPostImage(null);
-          setNewImagePreview(null);
+          setNewPostImagePreview(null);
           await sync();
         };
         const handleSendMessage = async () => {
-          if (!messaging || !selectedUser || !msgInput) return;
-          await messaging.sendDirectMessage(selectedUser, msgInput);
+          if (!messaging || !selectedUser || !msgInput && !newMsgImage) return;
+          await messaging.sendDirectMessage(selectedUser, msgInput, newMsgImage || void 0);
           setMsgInput("");
+          setNewMsgImage(null);
+          setNewMsgImagePreview(null);
           await sync();
-        };
-        const UserAvatar = ({ userId, size = 40 }) => {
-          const p2 = profileCache[userId] || { name: userId };
-          return /* @__PURE__ */ import_react2.default.createElement("div", { className: "d-flex align-items-center" }, p2.avatar ? /* @__PURE__ */ import_react2.default.createElement("img", { src: p2.avatar, style: { width: size + "px", height: size + "px", borderRadius: "50%", objectFit: "cover" }, className: "me-2" }) : /* @__PURE__ */ import_react2.default.createElement("div", { className: "bg-secondary text-white rounded-circle d-flex align-items-center justify-content-center me-2", style: { width: size + "px", height: size + "px" } }, userId[0].toUpperCase()), size > 30 && /* @__PURE__ */ import_react2.default.createElement("span", { className: "fw-bold" }, p2.name || userId));
         };
         const logout = () => {
           localStorage.removeItem("sov_local_config");
@@ -111879,13 +111965,17 @@ ${toHex(hashedRequest)}`;
           setSov(null);
         };
         if (!isLoggedIn) {
-          return /* @__PURE__ */ import_react2.default.createElement("div", { className: "container mt-5", style: { maxWidth: "500px" } }, /* @__PURE__ */ import_react2.default.createElement("div", { className: "card p-4 shadow-sm border-0 mb-4" }, /* @__PURE__ */ import_react2.default.createElement("h2", { className: "text-primary text-center fw-bold mb-4" }, "Sovereign Local"), /* @__PURE__ */ import_react2.default.createElement("p", { className: "text-center text-muted small mb-4" }, "Pure Local WebRTC Social Demo (QR & BT)"), rememberedUsers.length > 0 && /* @__PURE__ */ import_react2.default.createElement("div", { className: "mb-4" }, /* @__PURE__ */ import_react2.default.createElement("label", { className: "form-label small fw-bold text-muted text-uppercase" }, "Switch Account"), /* @__PURE__ */ import_react2.default.createElement("div", { className: "list-group" }, rememberedUsers.map((u2) => /* @__PURE__ */ import_react2.default.createElement("button", { key: u2.userId, className: "list-group-item list-group-item-action d-flex align-items-center py-2", onClick: () => performLogin(u2.config) }, /* @__PURE__ */ import_react2.default.createElement(UserAvatar, { userId: u2.userId, size: 32 }), /* @__PURE__ */ import_react2.default.createElement("div", { className: "flex-grow-1 ms-2" }, /* @__PURE__ */ import_react2.default.createElement("div", { className: "fw-bold" }, u2.name), /* @__PURE__ */ import_react2.default.createElement("div", { className: "x-small text-muted" }, u2.userId)))))), /* @__PURE__ */ import_react2.default.createElement("label", { className: "form-label small fw-bold text-muted text-uppercase" }, "Account Credentials"), /* @__PURE__ */ import_react2.default.createElement("input", { className: "form-control mb-2", placeholder: "User ID", value: config.userId, onChange: (e2) => setConfig({ ...config, userId: e2.target.value }) }), /* @__PURE__ */ import_react2.default.createElement("input", { className: "form-control mb-3", type: "password", placeholder: "Password", value: config.password, onChange: (e2) => setConfig({ ...config, password: e2.target.value }) }), /* @__PURE__ */ import_react2.default.createElement("button", { className: "btn btn-primary w-100 py-2 fs-5 mb-3", onClick: () => performLogin(config) }, "Log In"), /* @__PURE__ */ import_react2.default.createElement("div", { className: "text-center mt-3" }, /* @__PURE__ */ import_react2.default.createElement("button", { className: "btn btn-link btn-sm text-danger text-decoration-none", onClick: () => {
+          return /* @__PURE__ */ import_react2.default.createElement("div", { className: "container mt-5", style: { maxWidth: "500px" } }, /* @__PURE__ */ import_react2.default.createElement("div", { className: "card p-4 shadow-sm border-0 mb-4" }, /* @__PURE__ */ import_react2.default.createElement("h2", { className: "text-primary text-center fw-bold mb-4" }, "Sovereign Local"), /* @__PURE__ */ import_react2.default.createElement("p", { className: "text-center text-muted small mb-4" }, "Pure Local WebRTC Social Demo (QR & BT)"), rememberedUsers.length > 0 && /* @__PURE__ */ import_react2.default.createElement("div", { className: "mb-4" }, /* @__PURE__ */ import_react2.default.createElement("label", { className: "form-label small fw-bold text-muted text-uppercase" }, "Switch Account"), /* @__PURE__ */ import_react2.default.createElement("div", { className: "list-group" }, rememberedUsers.map((u2) => /* @__PURE__ */ import_react2.default.createElement("button", { key: u2.userId, className: "list-group-item list-group-item-action d-flex align-items-center py-2", onClick: () => performLogin(u2.config) }, /* @__PURE__ */ import_react2.default.createElement(UserAvatar, { userId: u2.userId, profileCache, resolveImage, size: 32 }), /* @__PURE__ */ import_react2.default.createElement("div", { className: "flex-grow-1 ms-2" }, /* @__PURE__ */ import_react2.default.createElement("div", { className: "fw-bold" }, u2.name), /* @__PURE__ */ import_react2.default.createElement("div", { className: "x-small text-muted" }, u2.userId)))))), /* @__PURE__ */ import_react2.default.createElement("label", { className: "form-label small fw-bold text-muted text-uppercase" }, "Account Credentials"), /* @__PURE__ */ import_react2.default.createElement("input", { className: "form-control mb-2", placeholder: "User ID", value: config.userId, onChange: (e2) => setConfig({ ...config, userId: e2.target.value }) }), /* @__PURE__ */ import_react2.default.createElement("input", { className: "form-control mb-3", type: "password", placeholder: "Password", value: config.password, onChange: (e2) => setConfig({ ...config, password: e2.target.value }) }), /* @__PURE__ */ import_react2.default.createElement("button", { className: "btn btn-primary w-100 py-2 fs-5 mb-3", onClick: () => performLogin(config) }, "Log In"), /* @__PURE__ */ import_react2.default.createElement("div", { className: "text-center mt-3" }, /* @__PURE__ */ import_react2.default.createElement("button", { className: "btn btn-link btn-sm text-danger text-decoration-none", onClick: () => {
             localStorage.clear();
             window.location.reload();
           } }, "Reset Local Data"))));
         }
-        return /* @__PURE__ */ import_react2.default.createElement("div", { className: "container-fluid p-0" }, /* @__PURE__ */ import_react2.default.createElement("nav", { className: "navbar navbar-light bg-white shadow-sm sticky-top px-3" }, /* @__PURE__ */ import_react2.default.createElement("span", { className: "navbar-brand text-primary fw-bold" }, "sov ", /* @__PURE__ */ import_react2.default.createElement("span", { className: "badge bg-info fs-6 fw-normal" }, "Local Mesh")), /* @__PURE__ */ import_react2.default.createElement("div", { className: "d-flex align-items-center" }, /* @__PURE__ */ import_react2.default.createElement("button", { className: "btn btn-outline-primary rounded-pill me-2", onClick: () => setShowPairing(true) }, /* @__PURE__ */ import_react2.default.createElement("i", { className: "bi bi-qr-code-scan" }), " Pair Device"), /* @__PURE__ */ import_react2.default.createElement(UserAvatar, { userId: config.userId, size: 32 }), /* @__PURE__ */ import_react2.default.createElement("button", { className: "btn btn-sm btn-outline-danger ms-2", onClick: logout }, "Logout"))), /* @__PURE__ */ import_react2.default.createElement("div", { className: "container mt-4" }, /* @__PURE__ */ import_react2.default.createElement("div", { className: "row" }, /* @__PURE__ */ import_react2.default.createElement("div", { className: "col-md-3" }, /* @__PURE__ */ import_react2.default.createElement("div", { className: "list-group list-group-flush mb-4" }, /* @__PURE__ */ import_react2.default.createElement("button", { className: `list-group-item list-group-item-action ${currentTab === "feed" ? "active" : ""}`, onClick: () => setCurrentTab("feed") }, "Feed"), /* @__PURE__ */ import_react2.default.createElement("button", { className: `list-group-item list-group-item-action ${currentTab === "friends" ? "active" : ""}`, onClick: () => setCurrentTab("friends") }, "Friends"), /* @__PURE__ */ import_react2.default.createElement("button", { className: `list-group-item list-group-item-action ${currentTab === "messages" ? "active" : ""}`, onClick: () => setCurrentTab("messages") }, "Messages"), /* @__PURE__ */ import_react2.default.createElement("button", { className: `list-group-item list-group-item-action ${currentTab === "profile" ? "active" : ""}`, onClick: () => setCurrentTab("profile") }, "Profile"))), /* @__PURE__ */ import_react2.default.createElement("div", { className: "col-md-9" }, currentTab === "feed" && /* @__PURE__ */ import_react2.default.createElement("div", null, /* @__PURE__ */ import_react2.default.createElement("div", { className: "card p-3 mb-4" }, /* @__PURE__ */ import_react2.default.createElement("textarea", { className: "form-control mb-2", rows: 2, placeholder: "What's happening locally?", value: newPost, onChange: (e2) => setNewPost(e2.target.value) }), /* @__PURE__ */ import_react2.default.createElement("button", { className: "btn btn-primary align-self-end", onClick: handlePost }, "Post")), posts.map((post) => /* @__PURE__ */ import_react2.default.createElement("div", { key: post.id, className: "card p-3 mb-3" }, /* @__PURE__ */ import_react2.default.createElement("div", { className: "d-flex align-items-center mb-2" }, /* @__PURE__ */ import_react2.default.createElement(UserAvatar, { userId: post.userId, size: 24 }), /* @__PURE__ */ import_react2.default.createElement("span", { className: "ms-2 small text-muted" }, new Date(post.timestamp).toLocaleString())), /* @__PURE__ */ import_react2.default.createElement("div", null, post.content)))), currentTab === "friends" && /* @__PURE__ */ import_react2.default.createElement("div", { className: "card p-3" }, /* @__PURE__ */ import_react2.default.createElement("h5", { className: "fw-bold mb-3" }, "Local Peers"), /* @__PURE__ */ import_react2.default.createElement("div", { className: "list-group list-group-flush" }, allUsers.filter((u2) => u2.userId !== config.userId).map((u2) => /* @__PURE__ */ import_react2.default.createElement("div", { key: u2.userId, className: "list-group-item d-flex justify-content-between align-items-center border-0 py-2" }, /* @__PURE__ */ import_react2.default.createElement(UserAvatar, { userId: u2.userId }), following.find((f2) => f2.userId === u2.userId) ? /* @__PURE__ */ import_react2.default.createElement("button", { className: "btn btn-light btn-sm rounded-pill", onClick: () => sov?.unfollow(u2.userId).then(() => loadData()) }, "Following") : /* @__PURE__ */ import_react2.default.createElement("button", { className: "btn btn-primary btn-sm rounded-pill", onClick: () => sov?.follow(u2.userId).then(() => loadData()) }, "Follow"))))), currentTab === "messages" && /* @__PURE__ */ import_react2.default.createElement("div", { className: "row g-0 h-100", style: { height: "60vh" } }, /* @__PURE__ */ import_react2.default.createElement("div", { className: "col-4 border-end overflow-y-auto" }, /* @__PURE__ */ import_react2.default.createElement("div", { className: "list-group list-group-flush" }, following.map((user) => /* @__PURE__ */ import_react2.default.createElement("button", { key: user.userId, className: `list-group-item list-group-item-action ${selectedUser === user.userId ? "bg-light" : ""}`, onClick: () => setSelectedUser(user.userId) }, /* @__PURE__ */ import_react2.default.createElement(UserAvatar, { userId: user.userId, size: 32 }))))), /* @__PURE__ */ import_react2.default.createElement("div", { className: "col-8 d-flex flex-column h-100" }, selectedUser ? /* @__PURE__ */ import_react2.default.createElement(import_react2.default.Fragment, null, /* @__PURE__ */ import_react2.default.createElement("div", { className: "flex-grow-1 p-3 overflow-y-auto bg-light" }, messages.filter((m2) => m2.senderId === selectedUser && m2.recipientId === config.userId || m2.senderId === config.userId && m2.recipientId === selectedUser).sort((a2, b2) => a2.timestamp - b2.timestamp).map((m2) => /* @__PURE__ */ import_react2.default.createElement("div", { key: m2.id, className: `d-flex mb-2 ${m2.senderId === config.userId ? "justify-content-end" : "justify-content-start"}` }, /* @__PURE__ */ import_react2.default.createElement("div", { className: `p-2 rounded px-3 ${m2.senderId === config.userId ? "bg-primary text-white" : "bg-white"}` }, m2.content)))), /* @__PURE__ */ import_react2.default.createElement("div", { className: "p-3 border-top" }, /* @__PURE__ */ import_react2.default.createElement("div", { className: "input-group" }, /* @__PURE__ */ import_react2.default.createElement("input", { className: "form-control", placeholder: "Type a message...", value: msgInput, onChange: (e2) => setMsgInput(e2.target.value), onKeyDown: (e2) => e2.key === "Enter" && handleSendMessage() }), /* @__PURE__ */ import_react2.default.createElement("button", { className: "btn btn-primary", onClick: handleSendMessage }, "Send")))) : /* @__PURE__ */ import_react2.default.createElement("div", { className: "flex-grow-1 d-flex align-items-center justify-content-center text-muted" }, "Select a friend to chat"))), currentTab === "profile" && /* @__PURE__ */ import_react2.default.createElement("div", { className: "card p-4" }, /* @__PURE__ */ import_react2.default.createElement("h4", { className: "mb-4 fw-bold" }, "My Local Profile"), /* @__PURE__ */ import_react2.default.createElement("div", { className: "mb-3" }, /* @__PURE__ */ import_react2.default.createElement("label", { className: "form-label small fw-bold" }, "Display Name"), /* @__PURE__ */ import_react2.default.createElement("input", { className: "form-control", value: profile?.name || "", onChange: (e2) => setProfile({ ...profile, name: e2.target.value }) })), /* @__PURE__ */ import_react2.default.createElement("button", { className: "btn btn-primary w-100", onClick: async () => {
-          await profileModule?.updateProfile(profile?.name || config.userId, "", profile?.avatar);
+        return /* @__PURE__ */ import_react2.default.createElement("div", { className: "container-fluid p-0" }, /* @__PURE__ */ import_react2.default.createElement("nav", { className: "navbar navbar-light bg-white shadow-sm sticky-top px-3" }, /* @__PURE__ */ import_react2.default.createElement("span", { className: "navbar-brand text-primary fw-bold" }, "sov ", /* @__PURE__ */ import_react2.default.createElement("span", { className: "badge bg-info fs-6 fw-normal" }, "Local Mesh")), /* @__PURE__ */ import_react2.default.createElement("div", { className: "d-flex align-items-center" }, /* @__PURE__ */ import_react2.default.createElement("button", { className: "btn btn-outline-primary rounded-pill me-2", onClick: () => setShowPairing(true) }, /* @__PURE__ */ import_react2.default.createElement("i", { className: "bi bi-qr-code-scan" }), " Pair Device"), /* @__PURE__ */ import_react2.default.createElement(UserAvatar, { userId: config.userId, profileCache, resolveImage, size: 32 }), /* @__PURE__ */ import_react2.default.createElement("button", { className: "btn btn-sm btn-outline-danger ms-2", onClick: logout }, "Logout"))), /* @__PURE__ */ import_react2.default.createElement("div", { className: "container mt-4" }, /* @__PURE__ */ import_react2.default.createElement("div", { className: "row" }, /* @__PURE__ */ import_react2.default.createElement("div", { className: "col-md-3" }, /* @__PURE__ */ import_react2.default.createElement("div", { className: "list-group list-group-flush mb-4" }, /* @__PURE__ */ import_react2.default.createElement("button", { className: `list-group-item list-group-item-action ${currentTab === "feed" ? "active" : ""}`, onClick: () => setCurrentTab("feed") }, "Feed"), /* @__PURE__ */ import_react2.default.createElement("button", { className: `list-group-item list-group-item-action ${currentTab === "friends" ? "active" : ""}`, onClick: () => setCurrentTab("friends") }, "Friends"), /* @__PURE__ */ import_react2.default.createElement("button", { className: `list-group-item list-group-item-action ${currentTab === "messages" ? "active" : ""}`, onClick: () => setCurrentTab("messages") }, "Messages"), /* @__PURE__ */ import_react2.default.createElement("button", { className: `list-group-item list-group-item-action ${currentTab === "profile" ? "active" : ""}`, onClick: () => setCurrentTab("profile") }, "Profile"))), /* @__PURE__ */ import_react2.default.createElement("div", { className: "col-md-9" }, currentTab === "feed" && /* @__PURE__ */ import_react2.default.createElement("div", null, /* @__PURE__ */ import_react2.default.createElement("div", { className: "card p-3 mb-4" }, /* @__PURE__ */ import_react2.default.createElement("textarea", { className: "form-control mb-2", rows: 2, placeholder: "What's happening locally?", value: newPost, onChange: (e2) => setNewPost(e2.target.value) }), newPostImagePreview && /* @__PURE__ */ import_react2.default.createElement("img", { src: newPostImagePreview, className: "img-fluid rounded mb-2", style: { maxHeight: "200px" } }), /* @__PURE__ */ import_react2.default.createElement("div", { className: "d-flex justify-content-between align-items-center" }, /* @__PURE__ */ import_react2.default.createElement("button", { className: "btn btn-outline-secondary btn-sm", onClick: () => postFileRef.current?.click() }, /* @__PURE__ */ import_react2.default.createElement("i", { className: "bi bi-image" })), /* @__PURE__ */ import_react2.default.createElement("input", { type: "file", ref: postFileRef, hidden: true, accept: "image/*", onChange: (e2) => handleFileChange(e2, "post") }), /* @__PURE__ */ import_react2.default.createElement("button", { className: "btn btn-primary", onClick: handlePost }, "Post"))), posts.map((post) => /* @__PURE__ */ import_react2.default.createElement(PostItem, { key: post.id, post, userId: config.userId, resolveImage }))), currentTab === "friends" && /* @__PURE__ */ import_react2.default.createElement("div", { className: "card p-3" }, /* @__PURE__ */ import_react2.default.createElement("h5", { className: "fw-bold mb-3" }, "Local Peers"), /* @__PURE__ */ import_react2.default.createElement("div", { className: "list-group list-group-flush" }, allUsers.filter((u2) => u2.userId !== config.userId).map((u2) => /* @__PURE__ */ import_react2.default.createElement("div", { key: u2.userId, className: "list-group-item d-flex justify-content-between align-items-center border-0 py-2" }, /* @__PURE__ */ import_react2.default.createElement(UserAvatar, { userId: u2.userId, profileCache, resolveImage }), following.find((f2) => f2.userId === u2.userId) ? /* @__PURE__ */ import_react2.default.createElement("button", { className: "btn btn-light btn-sm rounded-pill", onClick: () => sov?.unfollow(u2.userId).then(() => loadData()) }, "Following") : /* @__PURE__ */ import_react2.default.createElement("button", { className: "btn btn-primary btn-sm rounded-pill", onClick: () => sov?.follow(u2.userId).then(() => loadData()) }, "Follow"))))), currentTab === "messages" && /* @__PURE__ */ import_react2.default.createElement("div", { className: "row g-0 h-100", style: { height: "60vh" } }, /* @__PURE__ */ import_react2.default.createElement("div", { className: "col-4 border-end overflow-y-auto" }, /* @__PURE__ */ import_react2.default.createElement("div", { className: "list-group list-group-flush" }, following.map((user) => /* @__PURE__ */ import_react2.default.createElement("button", { key: user.userId, className: `list-group-item list-group-item-action ${selectedUser === user.userId ? "bg-light" : ""}`, onClick: () => setSelectedUser(user.userId) }, /* @__PURE__ */ import_react2.default.createElement(UserAvatar, { userId: user.userId, profileCache, resolveImage, size: 32 }))))), /* @__PURE__ */ import_react2.default.createElement("div", { className: "col-8 d-flex flex-column h-100" }, selectedUser ? /* @__PURE__ */ import_react2.default.createElement(import_react2.default.Fragment, null, /* @__PURE__ */ import_react2.default.createElement("div", { className: "flex-grow-1 p-3 overflow-y-auto bg-light" }, messages.filter((m2) => m2.senderId === selectedUser && m2.recipientId === config.userId || m2.senderId === config.userId && m2.recipientId === selectedUser).sort((a2, b2) => a2.timestamp - b2.timestamp).map((m2) => /* @__PURE__ */ import_react2.default.createElement(MessageItem, { key: m2.id, m: m2, myId: config.userId, resolveImage }))), /* @__PURE__ */ import_react2.default.createElement("div", { className: "p-3 border-top" }, newMsgImagePreview && /* @__PURE__ */ import_react2.default.createElement("img", { src: newMsgImagePreview, className: "img-fluid rounded mb-2", style: { maxHeight: "100px" } }), /* @__PURE__ */ import_react2.default.createElement("div", { className: "input-group" }, /* @__PURE__ */ import_react2.default.createElement("button", { className: "btn btn-outline-secondary", onClick: () => msgFileRef.current?.click() }, /* @__PURE__ */ import_react2.default.createElement("i", { className: "bi bi-image" })), /* @__PURE__ */ import_react2.default.createElement("input", { type: "file", ref: msgFileRef, hidden: true, accept: "image/*", onChange: (e2) => handleFileChange(e2, "msg") }), /* @__PURE__ */ import_react2.default.createElement("input", { className: "form-control", placeholder: "Type a message...", value: msgInput, onChange: (e2) => setMsgInput(e2.target.value), onKeyDown: (e2) => e2.key === "Enter" && handleSendMessage() }), /* @__PURE__ */ import_react2.default.createElement("button", { className: "btn btn-primary", onClick: handleSendMessage }, "Send")))) : /* @__PURE__ */ import_react2.default.createElement("div", { className: "flex-grow-1 d-flex align-items-center justify-content-center text-muted" }, "Select a friend to chat"))), currentTab === "profile" && /* @__PURE__ */ import_react2.default.createElement("div", { className: "card p-4" }, /* @__PURE__ */ import_react2.default.createElement("h4", { className: "mb-4 fw-bold" }, "My Local Profile"), /* @__PURE__ */ import_react2.default.createElement("div", { className: "text-center mb-4" }, /* @__PURE__ */ import_react2.default.createElement("div", { className: "position-relative d-inline-block" }, /* @__PURE__ */ import_react2.default.createElement(UserAvatar, { userId: config.userId, profileCache: { [config.userId]: profile }, resolveImage, size: 100 }), /* @__PURE__ */ import_react2.default.createElement("button", { className: "btn btn-sm btn-primary rounded-circle position-absolute bottom-0 end-0", onClick: () => profileFileRef.current?.click() }, /* @__PURE__ */ import_react2.default.createElement("i", { className: "bi bi-camera" })), /* @__PURE__ */ import_react2.default.createElement("input", { type: "file", ref: profileFileRef, hidden: true, accept: "image/*", onChange: (e2) => handleFileChange(e2, "profile") }))), /* @__PURE__ */ import_react2.default.createElement("div", { className: "mb-3" }, /* @__PURE__ */ import_react2.default.createElement("label", { className: "form-label small fw-bold" }, "Display Name"), /* @__PURE__ */ import_react2.default.createElement("input", { className: "form-control", value: profile?.name || "", onChange: (e2) => setProfile({ ...profile, name: e2.target.value }) })), /* @__PURE__ */ import_react2.default.createElement("button", { className: "btn btn-primary w-100", onClick: async () => {
+          let avatarToSave = profile?.avatar;
+          if (profile?.avatarPreview) {
+            avatarToSave = profile.avatarPreview;
+          }
+          await profileModule?.updateProfile(profile?.name || config.userId, "", avatarToSave);
           await sync();
           showAlert("Profile updated!");
         } }, "Save"))))), showPairing && /* @__PURE__ */ import_react2.default.createElement(
