@@ -109427,20 +109427,24 @@ ${toHex(hashedRequest)}`;
           };
         }, []);
         (0, import_react.useEffect)(() => {
-          if (qrValue && canvasRef.current) {
-            const generateQR = () => {
-              const lib = window.QRCode || window.qrcode;
-              if (lib && lib.toCanvas) {
+          let active = true;
+          const generateQR = () => {
+            if (!active) return;
+            const lib = window.QRCode || window.qrcode;
+            if (qrValue && (step === "show-offer" || step === "show-answer")) {
+              if (canvasRef.current && lib && lib.toCanvas) {
                 lib.toCanvas(canvasRef.current, qrValue, { width: 300 }, (error2) => {
                   if (error2) console.error("[QR] Error generating QR:", error2);
                 });
               } else {
-                console.warn("[QR] QRCode library not yet available, retrying...");
-                setTimeout(generateQR, 500);
+                setTimeout(generateQR, 100);
               }
-            };
-            generateQR();
-          }
+            }
+          };
+          generateQR();
+          return () => {
+            active = false;
+          };
         }, [qrValue, step]);
         const handleCreateOffer = async () => {
           setStep("connecting");
